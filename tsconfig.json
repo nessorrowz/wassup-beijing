@@ -30,6 +30,7 @@
     "src",
     "scripts",
     "relay",
+    "api",
     "tools",
     "tests",
     "vite.config.ts",

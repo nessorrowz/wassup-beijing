@@ -1,4 +1,12 @@
-import { formatRupiah, negateMoney, parseRupiah, sumMoney, toMoney, type Money } from '../domain/money';
+import {
+  formatRupiah,
+  negateMoney,
+  parseRupiah,
+  subMoney,
+  sumMoney,
+  toMoney,
+  type Money,
+} from '../domain/money';
 import type { AuditEntry, Earmark, Invoice } from '../domain/schemas';
 import { addDays, addMonths, daysBetween, isBefore, type IsoDate } from '../domain/time';
 import type { ActionService, ProposalPort } from '../actions/service';
@@ -100,6 +108,11 @@ export interface ScenarioData {
   runwayDeltaDays: number;
   horizonDays: number;
   lowestFreeCash: { base: { date: IsoDate; amount: Money }; scenario: { date: IsoDate; amount: Money } };
+  /**
+   * Scenario minus base for the pinch below, so a reply can state the change
+   * without the model doing the subtraction (CHAT-1). Negative means less cash.
+   */
+  pinchChange: Money;
   /** Lowest free cash before the late money arrives, with and without the scenario. */
   pinch: {
     until: IsoDate;
@@ -437,6 +450,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTools {
         runwayDeltaDays: result.runwayDeltaDays,
         horizonDays: result.forecast.horizonDays,
         lowestFreeCash: { base: result.baseLowestFreeCash, scenario: result.forecast.lowestFreeCash },
+        pinchChange: subMoney(result.pinch.scenario.amount, result.pinch.base.amount),
         pinch: result.pinch,
         affectedInvoices: invoices.map((invoice) => ({
           ...invoice,

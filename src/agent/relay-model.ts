@@ -29,7 +29,14 @@ export function createRelayTransport(endpoint: string = RELAY_ENDPOINT): Transpo
         body: JSON.stringify(request.payload),
       });
       if (!response.ok) {
-        throw new Error(`the relay answered ${response.status}`);
+        // The relay says why ("the model provider returned 429"); keep that for the user.
+        const detail = await response
+          .json()
+          .then((body: unknown) => (body as { error?: unknown }).error)
+          .catch(() => undefined);
+        throw new Error(
+          `the relay answered ${response.status}${typeof detail === 'string' ? ` (${detail})` : ''}`,
+        );
       }
       return (await response.json()) as unknown;
     },

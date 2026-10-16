@@ -1,15 +1,70 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { app, fromProviderToolCalls, toProviderMessages, toProviderTools } from './index.ts';
+import {
+  allowRequest,
+  app,
+  fromProviderToolCalls,
+  groupLargeNumbers,
+  MAX_BODY_BYTES,
+  RETRY_DELAYS_MS,
+  resetRateLimit,
+  toProviderMessages,
+  toProviderTools,
+} from './index.ts';
 
 /**
  * The relay is exercised in-process with Hono's `app.request`, so no server and
  * no network are needed.
  */
+// Retries wait no time in tests.
+RETRY_DELAYS_MS.fill(0);
+
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env['MODEL_API_KEY'];
   delete process.env['MODEL_API_URL'];
   delete process.env['MODEL_ID'];
+  delete process.env['RELAY_RATE_LIMIT'];
+  resetRateLimit();
+});
+
+describe('relay abuse limits', () => {
+  const ask = (headers: Record<string, string> = {}) =>
+    app.request('/api/model', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.7', ...headers },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
+    });
+
+  it('stops one client after the per-minute limit, without calling the provider', async () => {
+    process.env['MODEL_API_KEY'] = 'test-key';
+    process.env['RELAY_RATE_LIMIT'] = '2';
+    let upstreamCalls = 0;
+    vi.stubGlobal('fetch', () => {
+      upstreamCalls += 1;
+      return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] })));
+    });
+
+    expect((await ask()).status).toBe(200);
+    expect((await ask()).status).toBe(200);
+    const third = await ask();
+    expect(third.status).toBe(429);
+    expect(upstreamCalls).toBe(2);
+
+    // Another client has its own allowance.
+    expect((await ask({ 'x-forwarded-for': '198.51.100.9' })).status).toBe(200);
+  });
+
+  it('frees the allowance once the minute has passed', () => {
+    expect(allowRequest('a', 1, 0)).toBe(true);
+    expect(allowRequest('a', 1, 30_000)).toBe(false);
+    expect(allowRequest('a', 1, 60_001)).toBe(true);
+  });
+
+  it('refuses an oversized request before forwarding it', async () => {
+    process.env['MODEL_API_KEY'] = 'test-key';
+    const response = await ask({ 'content-length': String(MAX_BODY_BYTES + 1) });
+    expect(response.status).toBe(413);
+  });
 });
 
 describe('relay', () => {
@@ -81,6 +136,85 @@ describe('relay', () => {
     const forwarded = calls[0]?.init.body;
     expect(typeof forwarded).toBe('string');
     expect(forwarded as string).toContain('[REDACTED:NAME]');
+  });
+
+  it('sends the configured temperature, and none when it is not set', async () => {
+    process.env['MODEL_API_KEY'] = 'test-key';
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal('fetch', (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string) as Record<string, unknown>);
+      return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] })));
+    });
+    const ask = () =>
+      app.request('/api/model', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
+      });
+
+    await ask();
+    process.env['MODEL_TEMPERATURE'] = '0';
+    await ask();
+    delete process.env['MODEL_TEMPERATURE'];
+
+    expect(bodies[0]).not.toHaveProperty('temperature');
+    expect(bodies[1]).toMatchObject({ temperature: 0 });
+  });
+
+  it('retries a provider that refuses for a moment, then answers', async () => {
+    process.env['MODEL_API_KEY'] = 'test-key';
+    const statuses = [429, 503];
+    let calls = 0;
+    vi.stubGlobal('fetch', () => {
+      calls += 1;
+      const status = statuses.shift();
+      return Promise.resolve(
+        status
+          ? new Response('busy', { status })
+          : new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] })),
+      );
+    });
+
+    const response = await app.request('/api/model', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(calls).toBe(3);
+  });
+
+  it('does not retry a request the provider rejected as invalid', async () => {
+    process.env['MODEL_API_KEY'] = 'test-key';
+    let calls = 0;
+    vi.stubGlobal('fetch', () => {
+      calls += 1;
+      return Promise.resolve(new Response('bad', { status: 400 }));
+    });
+
+    const response = await app.request('/api/model', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
+    });
+
+    expect(response.status).toBe(502);
+    expect(calls).toBe(1);
+  });
+
+  it('reports a provider that cannot be reached at all', async () => {
+    process.env['MODEL_API_KEY'] = 'test-key';
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('network down')));
+
+    const response = await app.request('/api/model', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
+    });
+
+    expect(response.status).toBe(502);
+    expect(((await response.json()) as { error: string }).error).toMatch(/could not be reached/);
   });
 
   it('reports an upstream failure without leaking the key', async () => {
@@ -196,6 +330,27 @@ describe('relay translation to the chat-completions format', () => {
       { role: 'tool', tool_call_id: 'call_2', content: '{"status":"pending-approval"}' },
       { role: 'assistant', content: 'Done.' },
     ]);
+  });
+
+  it('groups the digits of large numbers in tool results, and leaves the rest alone', () => {
+    const [, result] = toProviderMessages([
+      { role: 'assistant', content: '', toolCalls: [{ name: 'get_runway', arguments: {} }] },
+      {
+        role: 'tool',
+        name: 'get_runway',
+        content:
+          '{"freeCash":6636334,"shortfall":-2771069,"days":80,"asOf":"2026-10-13","amounts":[3000000]}',
+      },
+    ]) as Array<{ content: string }>;
+
+    expect(JSON.parse(result!.content)).toEqual({
+      freeCash: '6.636.334',
+      shortfall: '-2.771.069',
+      days: 80,
+      asOf: '2026-10-13',
+      amounts: ['3.000.000'],
+    });
+    expect(groupLargeNumbers('not json 6636334')).toBe('not json 6636334');
   });
 
   it('reads tool calls back, restores the names and survives bad arguments', () => {

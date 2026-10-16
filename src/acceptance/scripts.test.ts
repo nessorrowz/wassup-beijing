@@ -108,6 +108,7 @@ describe('task scripts (PRD Section 12)', () => {
     expect(data.pinch.until).toBe('2026-11-19');
     expect(data.pinch.scenario.amount).toBeLessThan(data.pinch.base.amount);
     expect(data.pinch).toEqual(expected.pinch);
+    expect(data.pinchChange).toBe(data.pinch.scenario.amount - data.pinch.base.amount);
     expect(turn.reply).toContain('your runway stays at 80 days (2.7 months)');
     expect(turn.reply).toContain(
       `${rp(data.pinch.scenario.amount)} instead of ${rp(data.pinch.base.amount)}`,

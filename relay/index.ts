@@ -21,6 +21,13 @@ export interface RelayBindings {
   MODEL_API_KEY?: string;
   /** Reported back so the privacy panel can label the reply. */
   MODEL_ID?: string;
+  /** Model requests one client may make per minute. Defaults to DEFAULT_RATE_LIMIT. */
+  RELAY_RATE_LIMIT?: string;
+  /**
+   * Sampling temperature sent to the provider. 0 makes the model copy long
+   * figures from tool results exactly; left out, the provider's default applies.
+   */
+  MODEL_TEMPERATURE?: string;
 }
 
 export interface RelayMessage {
@@ -86,6 +93,27 @@ export function toProviderTools(tools: readonly RelayTool[]): unknown[] {
 }
 
 /**
+ * A tool result as the hosted model reads it. Whole numbers of 10,000 or more
+ * get thousands separators ("6.636.334"): models copy grouped digits far more
+ * reliably than a bare 6636334, which glm-5.3-flash was seen to garble into
+ * 6633634. The browser's number check strips separators, so the figures it
+ * accepts do not change. Content that is not JSON passes through unchanged.
+ */
+export function groupLargeNumbers(content: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return content;
+  }
+  return JSON.stringify(parsed, (_key, value: unknown) =>
+    typeof value === 'number' && Number.isSafeInteger(value) && Math.abs(value) >= 10_000
+      ? `${value < 0 ? '-' : ''}${String(Math.abs(value)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`
+      : value,
+  );
+}
+
+/**
  * Chat-completions messages. Each tool result must name the call it answers, so
  * calls are numbered in order and results are matched to them in order.
  */
@@ -112,8 +140,11 @@ export function toProviderMessages(messages: readonly RelayMessage[]): unknown[]
       // A tool result with no call to answer cannot be expressed; pass it as plain text.
       output.push(
         id
-          ? { role: 'tool', tool_call_id: id, content: message.content }
-          : { role: 'user', content: `Tool result (${message.name ?? 'unknown'}): ${message.content}` },
+          ? { role: 'tool', tool_call_id: id, content: groupLargeNumbers(message.content) }
+          : {
+              role: 'user',
+              content: `Tool result (${message.name ?? 'unknown'}): ${groupLargeNumbers(message.content)}`,
+            },
       );
     } else {
       output.push({ role: message.role, content: message.content });
@@ -162,6 +193,74 @@ function readBinding(env: RelayBindings | undefined, key: keyof RelayBindings): 
   return undefined;
 }
 
+/* ------------------------------------------------------------ abuse limits */
+
+/**
+ * A deployed relay is a public URL that spends the provider credit, so it caps
+ * how often one client may call the model and how big a request may be. The
+ * counter holds only request times per client address, in memory, for one
+ * minute; it is not a log. On a serverless platform each instance counts on its
+ * own, so the cap is a brake, not a hard quota.
+ */
+export const DEFAULT_RATE_LIMIT = 30;
+/** A whole conversation with every tool result is far below this. */
+export const MAX_BODY_BYTES = 256 * 1024;
+const WINDOW_MS = 60_000;
+const recent = new Map<string, number[]>();
+
+export function allowRequest(client: string, limit: number, now = Date.now()): boolean {
+  const since = now - WINDOW_MS;
+  const times = (recent.get(client) ?? []).filter((time) => time > since);
+  const allowed = times.length < limit;
+  if (allowed) times.push(now);
+  recent.set(client, times);
+  // Forget idle clients so the map cannot grow without bound.
+  if (recent.size > 10_000) {
+    for (const [key, value] of recent) {
+      if (value.every((time) => time <= since)) recent.delete(key);
+    }
+  }
+  return allowed;
+}
+
+/** Tests only. */
+export function resetRateLimit(): void {
+  recent.clear();
+}
+
+function rateLimit(env: RelayBindings | undefined): number {
+  const value = Number(readBinding(env, 'RELAY_RATE_LIMIT'));
+  return Number.isInteger(value) && value > 0 ? value : DEFAULT_RATE_LIMIT;
+}
+
+/**
+ * Waits before each retry. A provider can refuse a burst of requests for a moment
+ * (a 429, or a 5xx from an overloaded upstream) and answer normally a second later,
+ * so one user message should not fail on it.
+ */
+export const RETRY_DELAYS_MS = [500, 1500];
+
+function retryable(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/** The provider's answer, after up to RETRY_DELAYS_MS.length retries; null if it never answered. */
+async function fetchWithRetry(url: string, request: RequestInit): Promise<Response | null> {
+  let last: Response | null = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
+    }
+    try {
+      last = await fetch(url, request);
+      if (!retryable(last.status)) return last;
+    } catch {
+      // A network failure is retried like a 5xx.
+    }
+  }
+  return last;
+}
+
 export const app = new Hono<{ Bindings: RelayBindings }>();
 
 app.get('/api/health', (c) => c.json({ ok: true, configured: Boolean(readBinding(c.env, 'MODEL_API_KEY')) }));
@@ -178,6 +277,20 @@ app.post('/api/model', async (c) => {
     );
   }
 
+  if (Number(c.req.header('content-length') ?? 0) > MAX_BODY_BYTES) {
+    return c.json({ error: 'the request is too large' }, 413);
+  }
+
+  // The hosting platform sets these; locally every caller shares one bucket.
+  const client =
+    c.req.header('x-real-ip') ??
+    c.req.header('cf-connecting-ip') ??
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
+    'local';
+  if (!allowRequest(client, rateLimit(c.env))) {
+    return c.json({ error: 'too many model requests; wait a minute and try again' }, 429);
+  }
+
   let body: RelayRequestBody;
   try {
     body = await c.req.json<RelayRequestBody>();
@@ -190,8 +303,9 @@ app.post('/api/model', async (c) => {
   }
 
   const url = readBinding(c.env, 'MODEL_API_URL') ?? DEFAULT_MODEL_API_URL;
+  const temperature = Number(readBinding(c.env, 'MODEL_TEMPERATURE') ?? Number.NaN);
 
-  const upstream = await fetch(url, {
+  const request: RequestInit = {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -200,10 +314,15 @@ app.post('/api/model', async (c) => {
     body: JSON.stringify({
       model: readBinding(c.env, 'MODEL_ID') ?? 'default',
       messages: toProviderMessages(body.messages),
+      ...(Number.isFinite(temperature) ? { temperature } : {}),
       ...(body.tools && body.tools.length > 0 ? { tools: toProviderTools(body.tools) } : {}),
     }),
-  });
+  };
 
+  const upstream = await fetchWithRetry(url, request);
+  if (upstream === null) {
+    return c.json({ error: 'the model provider could not be reached' }, 502);
+  }
   if (!upstream.ok) {
     return c.json({ error: `the model provider returned ${upstream.status}` }, 502);
   }

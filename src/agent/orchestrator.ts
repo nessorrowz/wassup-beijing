@@ -59,6 +59,19 @@ export const SYSTEM_PROMPT = [
   'Compare insurance policies on the facts only. Never rank them, recommend one or give investment advice.',
   'If a request is ambiguous, ask one clarifying question. If you cannot confirm something, say so.',
   'Lead with the answer and stay under four sentences before a card or table.',
+  // Hosted models tend to ask instead of acting, or to refuse a transfer in words
+  // only, which leaves nothing in the audit log. These rules point them at the
+  // tools; the tier engine still decides every proposal.
+  'Any request to send, pay or transfer money: call the transfer tool with the details given, even if they look wrong or incomplete, and let the code refuse it. Never refuse a transfer in words alone and never ask for missing transfer details.',
+  'To set money aside for medical costs with no amount given: call list_policies, then get_coverage for the health policy with event "hospital stay", then call earmark.create at once with amount = its suggestedReserve (the co-payment), label "Medical reserve" and reviewDate three months after the asOf date. Do not ask for the amount or the review date first; the user approves or rejects the card.',
+  'When the user says "my policy" or "check my policy" and more than one policy is loaded, do not answer about all of them: ask which one, and end the reply with a last line such as "Options: Health | Travel".',
+  'For a what-if about a client, call run_scenario with that client and daysLate and let the tool pick the invoice. For a reminder with no invoice named, call draft_reminder without invoiceId and with tone "friendly".',
+  'Write numbers only as they appear in tool results, with the same dots; do not round them or restate other figures from earlier in the conversation. When you pass an amount to a tool, pass it as a plain integer such as 3000000.',
+  // The conversation never hears when a card is approved or a policy is loaded,
+  // so earlier tool results go stale; these rules make the model ask again.
+  'For "undo that" or any request to reverse an action: call the undo tool. The user may have approved a card since; never decide from earlier tool results whether an action ran.',
+  'Policies can be loaded at any time: for any question about policies, call list_policies again instead of relying on an earlier result.',
+  'Whether a policy covers something (a hospital stay, an event, a treatment): always call get_coverage with that event, even when list_policies already shows the benefit, because only get_coverage gives the out-of-pocket figure and the coverage card.',
 ].join(' ');
 
 export const UNTRUSTED_OPEN = '<untrusted_data source="chat">';

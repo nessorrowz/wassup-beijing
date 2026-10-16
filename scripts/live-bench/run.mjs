@@ -8,7 +8,7 @@
  *
  * For each model and each run it starts the relay with that MODEL_ID, opens the
  * app built with VITE_MODEL=relay in a fresh browser, sends the script messages
- * and scores what came back. It writes into evidence/live-model/:
+ * and scores what came back. It writes into evidence/live-model/ (git-ignored):
  *
  *   results.md      one row per model, plus every check per run
  *   <model>.json    every reply, card and timing

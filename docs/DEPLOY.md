@@ -20,7 +20,7 @@ in `relay/index.ts`.
 | `VITE_MODEL`        | `relay`                                        | Read at build time. Without it the site uses the rule-based model |
 | `MODEL_API_URL`     | `https://hyper.charm.land/v1/chat/completions` | The full chat-completions URL, not just the base                  |
 | `MODEL_API_KEY`     | the Hyper API key                              | Mark it **Sensitive**. Never prefix it with `VITE_`               |
-| `MODEL_ID`          | `glm-5.3-flash`                                | The model chosen for D5; see `evidence/live-model/`               |
+| `MODEL_ID`          | `glm-5.3-flash`                                | The model chosen for D5; see the live-model report in README.md   |
 | `MODEL_TEMPERATURE` | `0`                                            | Keeps replies repeatable; tested setting                          |
 | `RELAY_RATE_LIMIT`  | `30`                                           | Optional. Model requests per minute per visitor                   |
 

@@ -175,10 +175,10 @@ On 2026-10-16, five runs on `glm-5.3-flash` passed all 105 checks. No reply took
 6.3 seconds (median 2.9). An earlier five-run set passed 99 of 100: once, the number check
 withheld a runway reply because the model added a figure no tool returned. ST7 and ST8 are
 enforced by the tier engine with no model involved, so the rule-based runs in
-`evidence/results.md` cover them. Every
-reply, card and timing is in [`evidence/live-model/`](evidence/live-model/results.md).
-Five candidate models were compared before the choice; that comparison is in
-[`evidence/live-model/d5-comparison/`](evidence/live-model/d5-comparison/results.md).
+`evidence/results.md` cover them. The results, per check and per run, are in the
+[live-model report](https://claude.ai/artifact/7rKtd9s9rXRueYUThUWuXe).
+Five candidate models were compared before the choice; that comparison is in the same report.
+Running the script writes the raw replies to `evidence/live-model/`, which is not committed.
 
 Three changes came out of those runs. The system prompt in `src/agent/orchestrator.ts` now
 points hosted models at the tools for transfers, undo, policy questions and coverage. The relay

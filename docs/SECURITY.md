@@ -129,7 +129,7 @@ cross-border transfers: one row per request, with the payload as sent.
 These are not solved. They are listed so that nobody assumes they are.
 
 1. **A hosted model is not deterministic.** `glm-5.3-flash` was run through the real gate,
-   relay and provider on the chat scripts (105 of 105 checks over five runs on 2026-10-16, after an earlier set of 99 of 100; `evidence/live-model/`). Earlier
+   relay and provider on the chat scripts (105 of 105 checks over five runs on 2026-10-16, after an earlier set of 99 of 100; [live-model report](https://claude.ai/artifact/7rKtd9s9rXRueYUThUWuXe)). Earlier
    runs showed what goes wrong without the fixes now in place: the model refused a transfer in
    words instead of calling the tool, relied on a stale policy list, and garbled long numbers,
    which the number check then withheld. Each failure was a weaker answer, never a safety

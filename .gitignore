@@ -16,3 +16,6 @@ npm-debug.log*
 
 # Local agent checkpoint, not part of the product
 CHECKPOINT.md
+
+# Raw live-model runs; the summary is published in the live-model report
+evidence/live-model/

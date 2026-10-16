@@ -169,11 +169,13 @@ Two adapters implement the same interface, chosen at build time:
   `docs/DEPLOY.md` covers the setup.
 
 **Live-model evidence.** `scripts/live-bench/run.mjs` builds the site with `VITE_MODEL=relay`,
-starts the relay and sends the chat scripts (S1 to S8, I1 to I3, ST1, ST2, ST4 to ST6) through
+starts the relay and sends the chat scripts (S1 to S8, I1 to I3, ST1 to ST6) through
 the real gate, relay and provider in a fresh browser, then scores every reply.
-On 2026-10-16, five runs on `glm-5.3-flash` passed 99 of 100 checks: four runs passed every
-check, and in the fifth the number check withheld one runway reply (S1) because the model
-added a figure no tool returned. No reply took longer than 6.9 seconds (median 2.7). Every
+On 2026-10-16, five runs on `glm-5.3-flash` passed all 105 checks. No reply took longer than
+6.3 seconds (median 2.9). An earlier five-run set passed 99 of 100: once, the number check
+withheld a runway reply because the model added a figure no tool returned. ST7 and ST8 are
+enforced by the tier engine with no model involved, so the rule-based runs in
+`evidence/results.md` cover them. Every
 reply, card and timing is in [`evidence/live-model/`](evidence/live-model/results.md).
 Five candidate models were compared before the choice; that comparison is in
 [`evidence/live-model/d5-comparison/`](evidence/live-model/d5-comparison/results.md).

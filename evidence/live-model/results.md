@@ -11,8 +11,8 @@ Credits used is the change in the provider balance across the runs. The balance 
 
 | Model | Runs fully passed | Checks passed | Average reply (s) | Slowest reply (s) | Replies over 8 s | Credits used |
 | --- | --- | --- | --- | --- | --- | --- |
-| glm-5.3-flash | 4/5 | 99/100 | 2.9 | 6.9 | 0/90 | 1 |
+| glm-5.3-flash | 5/5 | 105/105 | 3.0 | 6.3 | 0/95 | 1 |
 
 ## Failed checks
 
-- glm-5.3-flash, run 5, S1: Reply withheld: it contained figures with no tool result behind them (31).
+None.

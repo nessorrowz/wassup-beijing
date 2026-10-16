@@ -132,7 +132,7 @@ rule-based model), and `tests/e2e/golden-path.spec.ts` runs the golden path and 
 | Write boundary    | `src/storage/ledger-write-boundary.test.ts`             | LED-3                                                               |
 | Outbound gate     | `src/gate/gate.test.ts`                                 | Redactor removes every identifier type; block decisions honoured    |
 | Agent             | `src/agent/agent.test.ts`                               | Tools propose but never approve; request parsing; number check      |
-| Hosted model      | `src/agent/relay-model.test.ts`, `relay/index.test.ts`  | Redacted payload, relay translation, failures; with a stubbed fetch |
+| Hosted model      | `src/agent/relay-model.test.ts`, `relay/*.test.ts`      | Relay translation, retries, rate limit; plus a live run (see below) |
 | Seed determinism  | `scripts/seed/generator.test.ts`                        | Same seed, same hash; PRD shape checks                              |
 | UI                | `src/ui/App.test.tsx`                                   | Dashboard, upload of real PDFs and CSVs, chat, consent, approvals   |
 | End to end        | `tests/e2e/*.spec.ts`                                   | Golden path in 6 actions, reload, no request leaves the origin      |
@@ -159,13 +159,31 @@ Two adapters implement the same interface, chosen at build time:
 - **Rule-based stand-in (default).** `src/agent/mock-model.ts` recognises the requests in the
   PRD's scripts, asks for the matching tools and words the results. It is not a language model.
   It runs in the browser, and the gate's transport is a stub, so requests are redacted and
-  shown in the Privacy panel but nothing is sent. This is what the tests and the demo use.
+  shown in the Privacy panel but nothing is sent. The automated tests use it, and so can anyone
+  running the app without an API key.
 - **Hosted model through the relay.** Build with `VITE_MODEL=relay` and run the relay with
   `MODEL_API_KEY`, `MODEL_API_URL` (an OpenAI-compatible chat-completions endpoint) and
   `MODEL_ID`. The browser posts the redacted request to `/api/model`; the relay adds the key
-  and translates tools and messages. **This path has unit tests with a stubbed provider but has
-  not been run against a live model.** Which provider to use is still open (decision D5), and
-  the eight scripts need a run on it before anyone relies on it.
+  and translates tools and messages. The deployed site uses **`glm-5.3-flash` through Hyper**
+  (`https://hyper.charm.land/v1/chat/completions`) with `MODEL_TEMPERATURE=0` (decision D5).
+  `docs/DEPLOY.md` covers the setup.
+
+**Live-model evidence.** `scripts/live-bench/run.mjs` builds the site with `VITE_MODEL=relay`,
+starts the relay and sends the chat scripts (S1 to S8, I1 to I3, ST1, ST2, ST4 to ST6) through
+the real gate, relay and provider in a fresh browser, then scores every reply.
+On 2026-10-16, five runs on `glm-5.3-flash` passed 99 of 100 checks: four runs passed every
+check, and in the fifth the number check withheld one runway reply (S1) because the model
+added a figure no tool returned. No reply took longer than 6.9 seconds (median 2.7). Every
+reply, card and timing is in [`evidence/live-model/`](evidence/live-model/results.md).
+Five candidate models were compared before the choice; that comparison is in
+[`evidence/live-model/d5-comparison/`](evidence/live-model/d5-comparison/results.md).
+
+Three changes came out of those runs. The system prompt in `src/agent/orchestrator.ts` now
+points hosted models at the tools for transfers, undo, policy questions and coverage. The relay
+writes large numbers in tool results with thousands separators (`6.636.334`), because the
+model copied bare seven-digit numbers wrongly often enough for the number check to withhold
+the reply. And `run_scenario` returns the change in the lowest free cash (`pinchChange`), so
+the model quotes it instead of subtracting.
 
 Nothing about safety depends on which adapter is used. A model reply is text and tool requests:
 the tier engine decides every request, and `src/agent/verify.ts` withholds a reply that contains
@@ -204,7 +222,12 @@ Static site plus one function, deployed from `main`:
   service worker. The default build needs nothing else.
 - **Relay** (only for a hosted model): deploy `relay/index.ts` as a single serverless function
   and set `MODEL_API_KEY`, `MODEL_API_URL` and `MODEL_ID`. Route `/api/*` to it and build the
-  site with `VITE_MODEL=relay`. It keeps no logs and stores nothing.
+  site with `VITE_MODEL=relay`. It keeps no logs and stores nothing beyond a one-minute,
+  in-memory request count per address for its rate limit.
+
+On Vercel all of this is already configured: `vercel.json` builds the site and
+`api/[[...route]].ts` serves the relay. Step-by-step setup, the environment variables and how
+to check the deployment are in [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 The content security policy in `index.html` allows scripts, workers and requests from the
 site's own origin only, so the relay must be served from the same origin as the site.

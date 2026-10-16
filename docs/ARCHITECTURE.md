@@ -302,8 +302,9 @@ arithmetic goes through `addMoney`, `subMoney`, `sumMoney`, `minMoney` and frien
 `gate.send()` is the only way out of the browser. It redacts names, account and policy
 numbers, NIK, phone numbers, email addresses and known postal addresses, records the request
 (payload after redaction, and a **masked** form of each removed value) for the privacy panel,
-honours a block decision, and only then calls the transport. The relay stores and logs nothing,
-and the service worker never caches `/api/` responses.
+honours a block decision, and only then calls the transport. The relay stores and logs nothing
+except, in memory and for one minute, the times of recent requests per client address, which
+it needs for its rate limit, and the service worker never caches `/api/` responses.
 
 What the model can receive is bounded by the tools: the user's message, aggregates from the
 ledger (balances, totals, open invoices, earmarks), the benefit table of a policy, and the text

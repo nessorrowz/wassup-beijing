@@ -92,9 +92,18 @@ Dexie and Zod. It is loaded from this origin, on demand, when a policy PDF is op
 | IndexedDB      | The browser          | All ledger storage                     |
 | Service worker | The browser          | Installable PWA app shell              |
 
+## Hosted model service (no code in the repository)
+
+| Service         | Provided by                                              | Used for                                                       | Terms                                                                                                          |
+| --------------- | -------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `glm-5.3-flash` | Hyper (`hyper.charm.land`), an OpenAI-compatible gateway | Chat replies and tool calls in the deployed site (decision D5) | Hyper's terms of service and the model provider's usage policy; called only from the relay with the team's key |
+
+No model weights or provider SDKs are in the tree; the relay speaks plain HTTPS to the
+provider. The rule-based model in `src/agent/mock-model.ts` is our own code.
+
 ## Our own code
 
-All source in `src/`, `scripts/`, `relay/`, `tools/`, `tests/` and `fixtures/` is written by
+All source in `src/`, `scripts/`, `relay/`, `api/`, `tools/`, `tests/` and `fixtures/` is written by
 the team for this submission. That includes the synthetic policy documents in
 `fixtures/policies/` and `public/samples/`: the insurers, the insured person and every
 figure in them are invented, and no wording is copied from a real policy. It is unlicensed in this repository (all rights reserved by the

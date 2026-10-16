@@ -128,11 +128,15 @@ cross-border transfers: one row per request, with the payload as sent.
 
 These are not solved. They are listed so that nobody assumes they are.
 
-1. **The hosted-model path is untested against a live provider.** The relay's translation and
-   the browser adapter are unit-tested with a stubbed provider. Whether a given model calls
-   the tools reliably, keeps replies short, or asks clarifying questions is unknown until the
-   eight scripts are run on it (decision D5). The safety controls hold either way; the
-   quality of the conversation may not.
+1. **A hosted model is not deterministic.** `glm-5.3-flash` was run through the real gate,
+   relay and provider on the chat scripts (99 of 100 checks over five runs on 2026-10-16; `evidence/live-model/`). Earlier
+   runs showed what goes wrong without the fixes now in place: the model refused a transfer in
+   words instead of calling the tool, relied on a stale policy list, and garbled long numbers,
+   which the number check then withheld. Each failure was a weaker answer, never a safety
+   failure: across every run of all five models compared, no transfer was proposed, no injected
+   instruction produced a card and the audit chain verified. Another model or a provider-side
+   update can still change how often a reply is withheld or a clarifying question is skipped,
+   so the scripts should be re-run (`scripts/live-bench/run.mjs`) after any such change.
 2. **Injection detection is a heuristic.** `src/importers/injection.ts` is a list of patterns.
    It will miss instructions phrased another way, and such a sentence in a cited clause would
    then reach a hosted model. The structural controls still apply: document text cannot set a
@@ -161,6 +165,17 @@ These are not solved. They are listed so that nobody assumes they are.
    PIN is `123456`. Anyone with the unlocked device can read the data and approve actions.
 10. **The demo clock is a convenience, not a control.** It is anchored to the seed's date so
     the numbers are reproducible. A real deployment would use the real clock.
+11. **The deployed relay spends provider credit for anyone who calls it.** `/api/model` needs no
+    login, because the app has no accounts. The relay limits each address to `RELAY_RATE_LIMIT`
+    requests a minute (30 by default) and refuses bodies over 256 KB, but each serverless
+    instance counts on its own and addresses can be changed, so this slows abuse rather than
+    capping spend. The provider balance should be checked before judging and the key rotated
+    after the competition (`docs/DEPLOY.md`).
+12. **The provider can rate-limit or fail.** During testing Hyper answered `429` for several
+    minutes after a sustained burst of about 45 requests a minute. The relay retries a `429` or
+    `5xx` twice, which covers short refusals but not a longer window; the chat then says it could
+    not reach the model, and everything else keeps working. Removing `VITE_MODEL` and redeploying
+    switches the site to the rule-based model, which needs no provider.
 
 ## Licences
 

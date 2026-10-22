@@ -9,6 +9,7 @@ Your ledger never leaves the browser. Every action the agent proposes is classif
 permission tier, checked against guardrails, approved by you with one press and written to an
 append-only, hash-chained audit log. **No real money moves anywhere in this codebase.**
 
+- Live Demo: [Link](https://wassup-beijing-5gld.vercel.app)
 - Full requirements: [`docs/PRD.md`](docs/PRD.md)
 - How it is put together, and the core algorithms: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Security self-assessment: [`docs/SECURITY.md`](docs/SECURITY.md)
